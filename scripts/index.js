@@ -1,5 +1,6 @@
 const hre = require('hardhat');
 const airnodeAbi = require('@api3/airnode-abi');
+const vm = require('isolated-vm');
 
 async function main() {
   // Deploy the contracts
@@ -10,7 +11,7 @@ async function main() {
 
   // Here, the requester represents what they want to be done with the JSON object
   // encoded as a bytes string
-  const rawComputationSpecs = 'Multiply field1 with 3 and return it as an uint256 type and return field2 as a string type';
+  const rawComputationSpecs = '[ res.field1 * 3, res.field2 ]';
   console.log(`\nThis is created by the requester to specify an arbitrary computation:\n  ${rawComputationSpecs}`)
   const hexlifiedComputationSpecs = '0x' + Buffer.from(rawComputationSpecs, 'ascii').toString('hex');
   console.log(`\nBefore using it as a parameter, the requester hexlifies it:\n  ${hexlifiedComputationSpecs}`);
@@ -46,8 +47,31 @@ console.log(`\nThe hexlified computations specs are encoded as a bytes type rese
   };
   console.log(`\nThis is what Airnode has received from the API:\n${JSON.stringify(apiResponse, null, 2)}\n`);
 
+  const isolate = new vm.Isolate({ memoryLimit: 8 });
+  const context = isolate.createContextSync();
+
+  const jail = context.global;
+  jail.setSync('global', jail.derefInto());
+
+  let retrieved;
+
+  jail.setSync('callback', function(args) {
+    retrieved = JSON.parse(args);
+  });
+
+  const script = isolate.compileScriptSync(`
+    const res = JSON.parse(${JSON.stringify(JSON.stringify(apiResponse))});
+    callback(JSON.stringify(${ recoveredRawComputationSpecs }));`
+  );
+
+  script.runSync(context, { timeout: 1 });
+
+  script.release();
+  isolate.dispose();
+  context.release();
+
   // Based on recoveredRawComputationSpecs and apiResponse, it forms a response of bytes type
-  const response = hre.ethers.utils.defaultAbiCoder.encode(['uint256', 'string'], [apiResponse.field1 * 3, apiResponse.field2]); 
+  const response = hre.ethers.utils.defaultAbiCoder.encode(['uint256', 'string'], retrieved);
   // and responds with it to the client
   await mockClient.fulfill(response);
 }
