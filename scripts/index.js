@@ -11,7 +11,7 @@ async function main() {
 
   // Here, the requester represents what they want to be done with the JSON object
   // encoded as a bytes string
-  const rawComputationSpecs = '[ res.field1 * 3, res.field2 ]';
+  const rawComputationSpecs = 'return [ res.field1 * 3, res.field2 ];';
   console.log(`\nThis is created by the requester to specify an arbitrary computation:\n  ${rawComputationSpecs}`)
   const hexlifiedComputationSpecs = '0x' + Buffer.from(rawComputationSpecs, 'ascii').toString('hex');
   console.log(`\nBefore using it as a parameter, the requester hexlifies it:\n  ${hexlifiedComputationSpecs}`);
@@ -61,7 +61,8 @@ console.log(`\nThe hexlified computations specs are encoded as a bytes type rese
 
   const script = isolate.compileScriptSync(`
     const res = JSON.parse(${JSON.stringify(JSON.stringify(apiResponse))});
-    callback(JSON.stringify(${ recoveredRawComputationSpecs }));`
+    const proc = new Function('res', \`${recoveredRawComputationSpecs}\`);
+    callback(JSON.stringify(proc(res)));`
   );
 
   script.runSync(context, { timeout: 1 });
