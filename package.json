@@ -2,7 +2,8 @@
   "name": "computation-specs-example",
   "version": "1.0.0",
   "scripts": {
-    "start": "hardhat run scripts/index.js"
+    "start": "hardhat run scripts/index.js",
+    "bson": "hardhat run scripts/bson.js"
   },
   "devDependencies": {
     "@api3/airnode-abi": "^0.1.0",
@@ -12,6 +13,7 @@
     "ethereum-waffle": "^3.4.0",
     "ethers": "^5.4.1",
     "hardhat": "^2.4.1",
-    "isolated-vm": "^4.3.2"
+    "isolated-vm": "^4.3.2",
+    "bson": "^4.4.1"
   }
 }
