@@ -1,5 +1,7 @@
 const hre = require('hardhat');
 const airnodeAbi = require('@api3/airnode-abi');
+const exec = require("child_process").execSync;
+const fs = require('fs');
 
 async function main() {
   // Deploy the contracts
@@ -10,7 +12,7 @@ async function main() {
 
   // Here, the requester represents what they want to be done with the JSON object
   // encoded as a bytes string
-  const rawComputationSpecs = 'Multiply field1 with 3 and return it as an uint256 type and return field2 as a string type';
+  const rawComputationSpecs = 'return { ["field1"] = res["field1"] * 3, ["field2"] = res["field2"] }';
   console.log(`\nThis is created by the requester to specify an arbitrary computation:\n  ${rawComputationSpecs}`)
   const hexlifiedComputationSpecs = '0x' + Buffer.from(rawComputationSpecs, 'ascii').toString('hex');
   console.log(`\nBefore using it as a parameter, the requester hexlifies it:\n  ${hexlifiedComputationSpecs}`);
@@ -46,8 +48,34 @@ console.log(`\nThe hexlified computations specs are encoded as a bytes type rese
   };
   console.log(`\nThis is what Airnode has received from the API:\n${JSON.stringify(apiResponse, null, 2)}\n`);
 
+  const script = `
+  local json = require "scripts/json"
+  local apiResponse = json.decode('${JSON.stringify(apiResponse)}')
+  local env = {}
+  
+  env["string"] = {}
+  env["string"]["len"] = string.len
+  env["string"]["lower"] = string.lower
+  
+  env["table"] = {}
+  env["table"]["remove"] = table.remove
+  
+  local function run(untrusted_code)
+    local untrusted_function, message = load(untrusted_code, nil, 't', env)
+    if not untrusted_function then return nil, message end
+    return pcall(untrusted_function, apiResponse)
+  end
+  local status, res = run [[
+    local res = ...
+    ${recoveredRawComputationSpecs}
+  ]]
+  print(json.encode(res))
+  `;
+
+  fs.writeFileSync('scripts/main.lua', script);
+
   // Based on recoveredRawComputationSpecs and apiResponse, it forms a response of bytes type
-  const response = hre.ethers.utils.defaultAbiCoder.encode(['uint256', 'string'], [apiResponse.field1 * 3, apiResponse.field2]); 
+  const response = hre.ethers.utils.defaultAbiCoder.encode(['uint256', 'string'], Object.values(JSON.parse(exec(`lua scripts/main.lua`, { encoding: 'utf-8' }))));
   // and responds with it to the client
   await mockClient.fulfill(response);
 }
