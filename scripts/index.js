@@ -10,15 +10,22 @@ async function main() {
 
   // Here, the requester represents what they want to be done with the JSON object
   // encoded as a bytes string
-  const rawComputationSpecs = "hre.ethers.utils.defaultAbiCoder.encode(['uint256','string'],[apiResponse.field1*3,apiResponse.field2])";
+  const rawComputationSpecs = "[apiResponse.field1*3,apiResponse.field2]";
   console.log(`\nThis is created by the requester to specify an arbitrary computation:\n  ${rawComputationSpecs}`)
   const hexlifiedComputationSpecs = '0x' + Buffer.from(rawComputationSpecs, 'ascii').toString('hex');
   console.log(`\nBefore using it as a parameter, the requester hexlifies it:\n  ${hexlifiedComputationSpecs}`);
+  // The output of the computation is an array. Here, we specify as what type each element of
+  // the array should be encoded as
+  const type = "uint256,string";
+  console.log(`\nComputation output should be encoded as:\n ${type}`);
 
   // Then, these specs are treated as a reserved parameter similar to _path, etc.
   const parameters = airnodeAbi.encode([
     {
-      name: '_compSpecs', type: 'bytes', value: hexlifiedComputationSpecs
+      name: '_jsOut', type: 'bytes', value: hexlifiedComputationSpecs
+    },
+    {
+      name: '_type', type: 'string', value: type
     },
     {
       name: 'someOtherParameter', type: 'uint256', value: 123
@@ -34,9 +41,11 @@ console.log(`\nThe hexlified computations specs are encoded as a bytes type rese
   });
   const decodedLog = mockAirnodeRrp.interface.parseLog(logs[0]);
   const decodedParameters = airnodeAbi.decode(decodedLog.args.parameters);
-  const recoveredHexlifiedComputationSpecs = decodedParameters._compSpecs;
+  const recoveredHexlifiedComputationSpecs = decodedParameters._jsOut;
   const recoveredRawComputationSpecs = Buffer.from(recoveredHexlifiedComputationSpecs.substring(2), 'hex').toString();
   console.log(`This is received and decoded at Airnode, ready to be used to process the API response:\n  ${recoveredRawComputationSpecs}`);
+  const recoveredType = decodedParameters._type;
+  console.log(`The computation output will be encoded with these types:\n ${recoveredType}`)
 
   // Now Airnode makes the API call and gets the JSON (assume the parameters required to do that were also specified)
   const apiResponse = {
@@ -48,8 +57,10 @@ console.log(`\nThe hexlified computations specs are encoded as a bytes type rese
 
   // Based on recoveredRawComputationSpecs and apiResponse, it forms a response of bytes type
   const response = eval(recoveredRawComputationSpecs);
+  const encodedResponse = eval(`hre.ethers.utils.defaultAbiCoder.encode([${recoveredType.split(',').map(x => `'${x}'`)}],${JSON.stringify(response)})`);
+
   // and responds with it to the client
-  await mockClient.fulfill(response);
+  await mockClient.fulfill(encodedResponse);
 }
 
 main()
